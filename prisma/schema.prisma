@@ -1,0 +1,250 @@
+// Prisma Schema for University Management System
+// Simplified: Single ID per entity
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==========================================
+// ENUMS
+// ==========================================
+
+enum Role {
+  ADMIN
+  DEPARTMENT
+  TEACHER
+  STUDENT
+}
+
+enum StudentStatus {
+  ACTIVE
+  ON_LEAVE
+  GRADUATED
+  SUSPENDED
+}
+
+enum TeacherStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum SectionStatus {
+  OPEN
+  CLOSED
+  CANCELED
+}
+
+enum EnrollmentStatus {
+  ENROLLED
+  CANCELED
+  COMPLETED
+}
+
+// ==========================================
+// USER AUTHENTICATION
+// ==========================================
+
+model UserAccount {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  passwordHash String
+  role         Role
+  isLocked     Boolean  @default(false)
+  fullName     String
+  email        String   @unique
+  avatarUrl    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  student Student?
+  teacher Teacher?
+
+  @@map("user_accounts")
+}
+
+// ==========================================
+// ORGANIZATIONAL ENTITIES
+// ==========================================
+
+model Department {
+  id        String   @id // e.g., "CS", "MATH" - use code as ID
+  name      String
+  headId    String?
+  phone     String?
+  location  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  head     Teacher?     @relation("DepartmentHead", fields: [headId], references: [id])
+  classes  ClassGroup[]
+  students Student[]
+  teachers Teacher[]    @relation("DepartmentTeachers")
+
+  @@map("departments")
+}
+
+model ClassGroup {
+  id           String   @id // e.g., "CS2024A" - use code as ID
+  name         String
+  cohort       Int
+  departmentId String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  department Department @relation(fields: [departmentId], references: [id])
+  students   Student[]
+
+  @@map("class_groups")
+}
+
+// ==========================================
+// PERSON ENTITIES
+// ==========================================
+
+model Student {
+  id           String        @id // Student ID code as primary key
+  userId       String        @unique
+  fullName     String
+  dateOfBirth  DateTime?
+  email        String
+  phone        String?
+  classId      String
+  departmentId String
+  status       StudentStatus @default(ACTIVE)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  // Relations
+  user        UserAccount  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  class       ClassGroup   @relation(fields: [classId], references: [id])
+  department  Department   @relation(fields: [departmentId], references: [id])
+  enrollments Enrollment[]
+  transcripts Transcript[]
+
+  @@map("students")
+}
+
+model Teacher {
+  id           String        @id // Teacher ID code as primary key
+  userId       String        @unique
+  fullName     String
+  email        String
+  phone        String?
+  departmentId String
+  status       TeacherStatus @default(ACTIVE)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  // Relations
+  user       UserAccount     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department Department      @relation("DepartmentTeachers", fields: [departmentId], references: [id])
+  sections   CourseSection[]
+  headOf     Department[]    @relation("DepartmentHead")
+
+  @@map("teachers")
+}
+
+// ==========================================
+// ACADEMIC ENTITIES
+// ==========================================
+
+model Course {
+  id          String   @id // Course code as primary key (e.g., "CS101")
+  name        String
+  credits     Int
+  description String?
+  level       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  sections CourseSection[]
+
+  @@map("courses")
+}
+
+model CourseSection {
+  id            String        @id @default(cuid())
+  sectionNumber String
+  courseId      String
+  teacherId     String
+  term          String
+  capacity      Int
+  enrolledCount Int           @default(0)
+  status        SectionStatus @default(OPEN)
+  isScoreLocked Boolean       @default(false)
+  schedule      String?
+  room          String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  // Relations
+  course      Course       @relation(fields: [courseId], references: [id])
+  teacher     Teacher      @relation(fields: [teacherId], references: [id])
+  enrollments Enrollment[]
+
+  @@unique([courseId, sectionNumber, term])
+  @@map("course_sections")
+}
+
+// ==========================================
+// ENROLLMENT & GRADING
+// ==========================================
+
+model Enrollment {
+  id         String           @id @default(cuid())
+  studentId  String
+  sectionId  String
+  enrollDate DateTime         @default(now())
+  status     EnrollmentStatus @default(ENROLLED)
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  // Relations
+  student Student       @relation(fields: [studentId], references: [id])
+  section CourseSection @relation(fields: [sectionId], references: [id])
+  score   Score?
+
+  @@unique([studentId, sectionId])
+  @@map("enrollments")
+}
+
+model Score {
+  id           String   @id @default(cuid())
+  enrollmentId String   @unique
+  processScore Float?
+  finalScore   Float?
+  totalScore   Float?
+  letterGrade  String?
+  updatedAt    DateTime @updatedAt
+  updatedBy    String?
+
+  // Relations
+  enrollment Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+
+  @@map("scores")
+}
+
+model Transcript {
+  id            String   @id @default(cuid())
+  studentId     String
+  term          String
+  gpa           Float
+  totalCredits  Int
+  cumulativeGpa Float?
+  generatedAt   DateTime @default(now())
+
+  // Relations
+  student Student @relation(fields: [studentId], references: [id])
+
+  @@unique([studentId, term])
+  @@map("transcripts")
+}
